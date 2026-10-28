@@ -1,0 +1,98 @@
+# MuleShield AI detection configuration.
+# All thresholds are *tunable heuristics*, not scientifically validated standards.
+# They can also be overridden from the "Detection Settings" page (stored in SQLite).
+version: 1
+
+features:
+  window_hours: 24          # sliding window for velocity / short-window value features
+  rapid_forward_hours: 6    # max dwell time between an incoming and outgoing transfer
+  forward_ratio_min: 0.60   # outgoing/incoming amount range treated as "comparable" (pass-through)
+  forward_ratio_max: 1.00
+
+scoring:
+  severity_points: {low: 8, medium: 16, high: 28}
+  max_rule_points: 60       # cap on points from distinct rules per account
+  weights: {rules: 60, graph: 15, ml: 25}   # ml weight is dropped if no ML output exists
+  bands: {low: 1, medium: 25, high: 50, critical: 75}   # minimum score for each band
+  review_min_score: 25      # accounts at/above this score are "flagged for review"
+  non_scoring_rules: [R009] # derived rules that must not double-count
+  graph_neighbour_share_for_full_points: 0.5
+
+ml:
+  min_accounts_unsupervised: 30
+  min_positive_accounts: 10
+  min_negative_accounts: 10
+  anomaly_alert_percentile: 0.98
+  supervised_alert_score: 0.80
+  random_state: 42
+
+graph:
+  max_chain_gap_hours: 12
+  chain_ratio_min: 0.60
+  chain_ratio_max: 1.02
+  max_chains: 500
+  max_cycle_length: 4
+  max_cycle_span_hours: 72
+  max_cycles: 200
+
+rules:
+  R001:
+    name: High transaction velocity
+    enabled: true
+    severity: medium
+    description: Peak number of transactions inside the sliding window is high relative to this dataset.
+    params: {min_tx_in_window: 8, dataset_percentile: 95}
+  R002:
+    name: Rapid pass-through
+    enabled: true
+    severity: high
+    description: Incoming funds are forwarded onward within a short dwell time in comparable amounts.
+    params: {min_rapid_forwards: 2, min_forwarded_value: 0}
+  R003:
+    name: Unusual fan-in
+    enabled: true
+    severity: medium
+    description: Account receives from an unusually large number of distinct senders.
+    params: {min_unique_senders: 8, dataset_percentile: 95}
+  R004:
+    name: Unusual fan-out
+    enabled: true
+    severity: medium
+    description: Account sends to an unusually large number of distinct recipients.
+    params: {min_unique_receivers: 8, dataset_percentile: 95}
+  R005:
+    name: High two-way flow in short window
+    enabled: true
+    severity: medium
+    description: Both incoming and outgoing value peak at a high level inside the same window length.
+    params: {min_window_value: 20000, dataset_percentile: 95}
+  R006:
+    name: Large deviation from account's own amounts
+    enabled: true
+    severity: low
+    description: Transaction amount is an outlier versus the source account's observed amounts (robust z-score).
+    params: {min_history: 6, robust_z_threshold: 8.0, min_amount: 5000}
+  R007:
+    name: Multi-hop rapid transfer chain
+    enabled: true
+    severity: high
+    description: Account participates in a time-ordered chain of comparable-amount transfers across several accounts.
+    params: {min_hops: 3}
+  R008:
+    name: Circular flow
+    enabled: true
+    severity: medium
+    description: Account lies on a short directed cycle of transfers (round-tripping pattern).
+    params: {min_cycle_value: 1000}
+  R009:
+    name: Multiple suspicious signals
+    enabled: true
+    severity: high
+    description: Several distinct rules triggered on the same account.
+    params: {min_distinct_rules: 3}
+  R010:
+    name: Compressed activity window
+    enabled: true
+    severity: low
+    description: High activity concentrated in a very short *observed* window (not account age; creation dates are unknown).
+    params: {max_span_hours: 48, min_tx_count: 6, min_total_value: 5000}
